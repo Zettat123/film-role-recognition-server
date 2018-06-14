@@ -106,3 +106,4 @@ venv.bak/
 .idea
 model
 static
+config.py
