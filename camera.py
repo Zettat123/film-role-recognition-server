@@ -1,6 +1,7 @@
 import os, sys, dlib, random
 import numpy as np
 import cv2
+import base64
 from config import configDict
 from sklearn.cluster import DBSCAN
 from collections import defaultdict, Counter
@@ -64,6 +65,7 @@ class VideoReader(object):
         self.done = False
 
         self.cluster_result = open(configDict["UnknownImagePath"], 'rb').read()
+        self.infos = {}
 
     def __del__(self):
         self.video.release()
@@ -113,6 +115,7 @@ class VideoReader(object):
             total = len(self.cluster.get_labels())
 
             clusters = []
+            infos = {}
 
             labels = defaultdict(list)
             for i, l in enumerate(self.cluster.get_labels()):
@@ -127,14 +130,37 @@ class VideoReader(object):
                 faces = [imresize(f, (width, height)) for f in original_faces]
                 for j, f in enumerate(faces):
                     img[30:30+height, (width+10)*j:(width+10)*j+width, :] = f
-                cv2.putText(img, 'Cluster: {0} Frequency: {1:.2f}%'.format(k, counter[k] * 100.0 / total), (6, 25), font, 1.0, (0, 0, 0), 2)
+                # cv2.putText(img, 'Cluster: {0} Frequency: {1:.2f}%'.format(k, counter[k] * 100.0 / total), (6, 25), font, 1.0, (0, 0, 0), 2)
+                # infos.append('Cluster: {0} Frequency: {1:.2f}%'.format(k, counter[k] * 100.0 / total))
+                ret, tmpimg = cv2.imencode('.jpg', img)
+                infos[str(k)] = {
+                    "image": str(base64.b64encode(tmpimg))[2:-1],
+                    "frequency": counter[k] * 100.0 / total
+                }
                 clusters.append(img)
 
             whole = np.concatenate(tuple(clusters))
             ret, whole = cv2.imencode('.jpg', whole)
             self.cluster_result = whole.tobytes()
+            self.infos = infos
 
-        return self.cluster_result
+        return self.infos
+        # return {
+        #     "cluster_result": self.cluster_result,
+        #     "infos": self.infos
+        # }
+        # return self.cluster_result
+
+    def start_reco(self):
+        while True:
+            if self.get_clusters() is None:
+                break
+
+    def getInfos(self):
+        return self.infos
+
+    def isFinish(self):
+        return self.done
 
 if __name__ == '__main__':
     pass
