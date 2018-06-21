@@ -2,6 +2,7 @@ import os, sys, dlib, random
 import numpy as np
 import cv2
 import base64
+import time
 from config import configDict
 from sklearn.cluster import DBSCAN
 from collections import defaultdict, Counter
@@ -57,6 +58,7 @@ class VideoReader(object):
         self.fps = self.video.get(cv2.CAP_PROP_FPS)
         self.read_interval = round(self.fps / 2)
         self.read_cnt = 0
+        self.frame_cnt = self.video.get(cv2.CAP_PROP_FRAME_COUNT)
         self.frame_height = self.video.get(cv2.CAP_PROP_FRAME_HEIGHT)
         self.frame_width = self.video.get(cv2.CAP_PROP_FRAME_WIDTH)
         self.faces_description = []
@@ -98,8 +100,9 @@ class VideoReader(object):
         self.get_frame()
         width = 80
         height = 80
-        num = 10
+        num = 7
         font = cv2.FONT_HERSHEY_DUPLEX
+        # self.infos["progress"] = self.read_cnt / self.frame_cnt
 
         if self.done:
             return None
@@ -107,8 +110,8 @@ class VideoReader(object):
         # if not self.read_cnt % 100:
         #     self.cluster_result = self.jpeg
 
-        print('read_cnt is {0}, faces_description is {1}'.format(self.read_cnt, len(self.faces_description)))
-        if not self.read_cnt % 30 and len(self.faces_description) > 5:
+        print('read_cnt is {0}, faces_description is {1}, total_cnt is {2}'.format(self.read_cnt, len(self.faces_description), self.frame_cnt))
+        if not self.read_cnt % 30 and len(self.faces_description) > num:
             faces_description = np.asarray(self.faces_description)
             self.cluster.fit(faces_description)
             counter = Counter(self.cluster.get_labels())
@@ -116,34 +119,40 @@ class VideoReader(object):
 
             clusters = []
             infos = {}
+            infos["clusters"] = {}
 
             labels = defaultdict(list)
             for i, l in enumerate(self.cluster.get_labels()):
                 labels[l].append(i)
 
             for k, v in labels.items():
-                img = np.ones((height + 30, (width + 10) * num, 3), np.uint8) * 255
+                # img = np.ones((height + 30, (width + 10) * num, 3), np.uint8) * 255
+                img = np.ones((height, (width + 10) * num, 3), np.uint8) * 255
                 indics = v[:]
                 random.shuffle(indics)
-                indics = indics[:10]
+                indics = indics[:num]
                 original_faces = [self.faces[i] for i in indics]
                 faces = [imresize(f, (width, height)) for f in original_faces]
                 for j, f in enumerate(faces):
-                    img[30:30+height, (width+10)*j:(width+10)*j+width, :] = f
+                    img[0:height, (width + 10) * j:(width + 10) * j + width, :] = f
+                    # img[30:30+height, (width+10)*j:(width+10)*j+width, :] = f
                 # cv2.putText(img, 'Cluster: {0} Frequency: {1:.2f}%'.format(k, counter[k] * 100.0 / total), (6, 25), font, 1.0, (0, 0, 0), 2)
                 # infos.append('Cluster: {0} Frequency: {1:.2f}%'.format(k, counter[k] * 100.0 / total))
                 ret, tmpimg = cv2.imencode('.jpg', img)
-                infos[str(k)] = {
+                infos["clusters"][str(k)] = {
                     "image": str(base64.b64encode(tmpimg))[2:-1],
                     "frequency": counter[k] * 100.0 / total
                 }
                 clusters.append(img)
+
 
             whole = np.concatenate(tuple(clusters))
             ret, whole = cv2.imencode('.jpg', whole)
             self.cluster_result = whole.tobytes()
             self.infos = infos
 
+        self.infos["progress"] = int(self.read_cnt / self.frame_cnt * 100)
+        self.infos["time_stamp"] = time.time()
         return self.infos
         # return {
         #     "cluster_result": self.cluster_result,
