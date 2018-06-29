@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import base64
 import time
+import face_recognition
 from config import configDict
 from sklearn.cluster import DBSCAN
 from collections import defaultdict, Counter
@@ -48,7 +49,7 @@ class Cluster(object):
 
 
 class VideoReader(object):
-    def __init__(self, videofilepath):
+    def __init__(self, videofilepath, names_list, encodings_list):
         self.detector = FaceDetector()
         self.predictor = FacePredictor(configDict["FacePredictorPath"])
         self.descriptor = FaceDescriptor(configDict["FaceDescriptorPath"])
@@ -68,6 +69,10 @@ class VideoReader(object):
 
         self.cluster_result = open(configDict["UnknownImagePath"], 'rb').read()
         self.infos = {}
+
+        self.names_list = names_list
+        self.encodings_list = encodings_list
+        self.names_len = len(self.names_list)
 
     def __del__(self):
         self.video.release()
@@ -111,7 +116,7 @@ class VideoReader(object):
         #     self.cluster_result = self.jpeg
 
         print('read_cnt is {0}, faces_description is {1}, total_cnt is {2}'.format(self.read_cnt, len(self.faces_description), self.frame_cnt))
-        if not self.read_cnt % 30 and len(self.faces_description) > num:
+        if (not self.read_cnt % 30 or self.read_cnt == self.frame_cnt) and len(self.faces_description) > num:
             faces_description = np.asarray(self.faces_description)
             self.cluster.fit(faces_description)
             counter = Counter(self.cluster.get_labels())
@@ -126,7 +131,22 @@ class VideoReader(object):
                 labels[l].append(i)
 
             for k, v in labels.items():
-                # img = np.ones((height + 30, (width + 10) * num, 3), np.uint8) * 255
+                name = ''
+
+                if self.read_cnt == self.frame_cnt:
+                    name = 'Unknown'
+                    for index in range(self.names_len):
+                        if name != 'Unknown' or k == -1:
+                            break
+                        current_min_distance = 999
+                        for vindex in v:
+                            distance_list = face_recognition.face_distance(self.encodings_list, faces_description[vindex])
+                            if min(distance_list) <= 0.5 and min(distance_list) < current_min_distance:
+                                current_min_distance = min(distance_list)
+                                min_index = distance_list.tolist().index(min(distance_list))
+                                name = self.names_list[min_index]
+
+
                 img = np.ones((height, (width + 10) * num, 3), np.uint8) * 255
                 indics = v[:]
                 random.shuffle(indics)
@@ -141,7 +161,8 @@ class VideoReader(object):
                 ret, tmpimg = cv2.imencode('.jpg', img)
                 infos["clusters"][str(k)] = {
                     "image": str(base64.b64encode(tmpimg))[2:-1],
-                    "frequency": counter[k] * 100.0 / total
+                    "frequency": counter[k] * 100.0 / total,
+                    "name": name
                 }
                 clusters.append(img)
 
@@ -159,17 +180,6 @@ class VideoReader(object):
         #     "infos": self.infos
         # }
         # return self.cluster_result
-
-    def start_reco(self):
-        while True:
-            if self.get_clusters() is None:
-                break
-
-    def getInfos(self):
-        return self.infos
-
-    def isFinish(self):
-        return self.done
 
 if __name__ == '__main__':
     pass
